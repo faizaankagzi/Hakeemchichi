@@ -125,6 +125,20 @@ let activeCategory = 'All';
 let sortMode = 'default';
 let filteredProducts = [...PRODUCTS];
 
+/* Mobile filter sidebar toggle */
+function toggleMobileFilter() {
+  var sidebar = document.querySelector('.shop-sidebar');
+  if (!sidebar) return;
+  sidebar.classList.toggle('open');
+  // Add close button if not present
+  if (sidebar.classList.contains('open') && !sidebar.querySelector('.shop-sidebar-close')) {
+    var closeBar = document.createElement('div');
+    closeBar.className = 'shop-sidebar-close';
+    closeBar.innerHTML = '<h4>Filters</h4><button onclick="toggleMobileFilter()" style="background:none;border:none;cursor:pointer;font-size:1.2rem;color:var(--text-light)"><svg xmlns=\"http://www.w3.org/2000/svg\" width=\"18\" height=\"18\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2.5\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><line x1=\"18\" y1=\"6\" x2=\"6\" y2=\"18\"/><line x1=\"6\" y1=\"6\" x2=\"18\" y2=\"18\"/></svg></button>';
+    sidebar.prepend(closeBar);
+  }
+}
+
 /* ══════════════════════════════════
    INIT
 ══════════════════════════════════ */
@@ -159,7 +173,7 @@ function renderBestsellers() {
   const grid = document.getElementById('bestsellersGrid');
   if (!grid) return;
   grid.innerHTML = bestsellers.map(p => productCardHTML(p)).join('');
-  setTimeout(initScrollAnimations, 50);
+  if (window.triggerReveal) window.triggerReveal();
 }
 
 /* ══════════════════════════════════
@@ -244,7 +258,7 @@ function renderShopGrid(products) {
     return;
   }
   grid.innerHTML = products.map(p => productCardHTML(p)).join('');
-  setTimeout(initScrollAnimations, 50);
+  if (window.triggerReveal) window.triggerReveal();
 }
 
 /* ══════════════════════════════════
@@ -464,56 +478,72 @@ document.addEventListener('keydown', e => {
 });
 
 /* ══════════════════════════════════
-   SCROLL ANIMATION SYSTEM
-   Intersection Observer — minimal & elegant
+   SCROLL & LOAD ANIMATIONS
+   Single clean implementation
 ══════════════════════════════════ */
 
-function initScrollAnimations() {
-  const observer = new IntersectionObserver((entries) => {
-    entries.forEach(entry => {
-      if (entry.isIntersecting) {
-        entry.target.classList.add('visible');
-        // Unobserve after reveal (no re-hide)
-        observer.unobserve(entry.target);
-      }
-    });
-  }, { threshold: 0.12, rootMargin: '0px 0px -40px 0px' });
+(function() {
+  'use strict';
 
-  // Observe all reveal elements
-  document.querySelectorAll('.reveal, .reveal-group, .timeline-item').forEach(el => {
-    observer.observe(el);
-  });
-}
+  /* ── Intersection Observer for scroll reveals ── */
+  var observer = null;
 
-/* ── Header shadow on scroll ── */
-function initHeaderScroll() {
-  const header = document.getElementById('header');
-  if (!header) return;
-  window.addEventListener('scroll', () => {
-    header.classList.toggle('scrolled', window.scrollY > 20);
-  }, { passive: true });
-}
-
-/* ── Re-run observer when section changes ── */
-const _origShowSection = showSection;
-window.showSection = function(id) {
-  _origShowSection(id);
-  // Small delay so section is visible before observing
-  setTimeout(() => {
-    document.querySelectorAll('.reveal:not(.visible), .reveal-group:not(.visible), .timeline-item:not(.visible)')
-      .forEach(el => {
-        // Trigger immediately if in viewport
-        const rect = el.getBoundingClientRect();
-        if (rect.top < window.innerHeight * 0.9) {
-          el.classList.add('visible');
+  function createObserver() {
+    if (!('IntersectionObserver' in window)) {
+      // Fallback: just make everything visible immediately
+      showAll();
+      return;
+    }
+    observer = new IntersectionObserver(function(entries) {
+      entries.forEach(function(entry) {
+        if (entry.isIntersecting) {
+          entry.target.classList.add('visible');
+          observer.unobserve(entry.target);
         }
       });
-    initScrollAnimations();
-  }, 80);
-};
+    }, { threshold: 0.1, rootMargin: '0px 0px -30px 0px' });
+  }
 
-/* Init on DOM ready */
-document.addEventListener('DOMContentLoaded', () => {
-  initHeaderScroll();
-  setTimeout(initScrollAnimations, 300);
-});
+  function observeAll() {
+    if (!observer) return;
+    var els = document.querySelectorAll(
+      '.reveal:not(.visible), .reveal-group:not(.visible), .timeline-item.reveal:not(.visible)'
+    );
+    els.forEach(function(el) { observer.observe(el); });
+  }
+
+  function showAll() {
+    document.querySelectorAll('.reveal, .reveal-group, .timeline-item')
+      .forEach(function(el) { el.classList.add('visible'); });
+  }
+
+  /* ── Header shadow on scroll ── */
+  function initHeaderScroll() {
+    var header = document.getElementById('header');
+    if (!header) return;
+    window.addEventListener('scroll', function() {
+      header.classList.toggle('scrolled', window.scrollY > 20);
+    }, { passive: true });
+  }
+
+  /* ── Patch showSection to re-observe after section switch ── */
+  var _orig = window.showSection;
+  window.showSection = function(id) {
+    _orig(id);
+    setTimeout(observeAll, 120);
+  };
+
+  /* ── Init ── */
+  document.addEventListener('DOMContentLoaded', function() {
+    createObserver();
+    initHeaderScroll();
+    // Slight delay so section.active is painted first
+    setTimeout(observeAll, 200);
+  });
+
+  /* Also fire after dynamic renders (called by product grid functions) */
+  window.triggerReveal = function() {
+    setTimeout(observeAll, 60);
+  };
+
+})();
